@@ -25,16 +25,19 @@ echo "Running CodeQL query to list candidate action refs..."
 
 "$CODEQL" bqrs decode --format=json --output="$WORKDIR/refs.json" "$WORKDIR/refs.bqrs"
 
-# Deduplicated `action,ref` pairs (tab-separated, no quoting) whose ref looks like a release
-# version (vX / vX.Y / vX.Y.Z, optional leading "v"); branch names, "latest", "main", etc. can
-# never correspond to a GitHub Release, so there's no point calling the API for those.
+# Deduplicated `action,ref` pairs (tab-separated, no quoting). Every distinct ref is a candidate:
+# a GitHub Release can be published against a tag of any name (`stable`, `release-2024-01`, even
+# `latest` or `main` if someone chose to name it that way), and that release can be immutable
+# regardless of whether the tag name looks like a semantic version, so we don't filter by shape
+# here -- the REST lookup below is the actual source of truth, and simply returns 404 for refs
+# that turn out to be branches or have no matching release.
 jq -r '
   .["#select"].tuples[]
   | [.[0], .[1]]
   | @tsv
 ' "$WORKDIR/refs.json" \
+  | tr -d '\r' \
   | sort -u \
-  | awk -F'\t' '$2 ~ /^v?[0-9]+(\.[0-9]+){0,2}$/' \
   > "$WORKDIR/candidates.tsv"
 
 : > "$WORKDIR/immutable.tsv"
@@ -43,9 +46,9 @@ while IFS=$'\t' read -r action ref; do
   name="${action#*/}"
 
   echo "Checking $owner/$name@$ref..." >&2
-  # A 404 means there is no release for this tag (e.g. it's a moving major/minor tag like `v6`,
-  # or a branch name that slipped through the version-like filter above); treat that, and any
-  # other failure, as "not immutable" rather than aborting the whole run.
+  # A 404 means there is no release for this tag (e.g. it's a branch name, or a moving
+  # major/minor tag like `v6` that was never itself released); treat that, and any other
+  # failure, as "not immutable" rather than aborting the whole run.
   immutable=$(gh api "repos/$owner/$name/releases/tags/$ref" --jq '.immutable // false' 2>/dev/null || echo "false")
 
   if [ "$immutable" = "true" ]; then
