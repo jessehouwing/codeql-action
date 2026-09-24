@@ -1,0 +1,43 @@
+name: 'Prepare immutable action refs (prototype)'
+description: >-
+  Prototype pre-processing step for the `actions/unpinned-tag` CodeQL query. Uses CodeQL itself
+  to find every `owner/repo@ref` used in the scanned repository's GitHub Actions workflows that
+  is not already pinned to a commit SHA, checks each `(owner/repo, ref)` pair against GitHub's
+  Immutable Releases feature via the REST API, and writes a CodeQL data extension file
+  (`immutableActionRefsDataModel`) that can be passed to `codeql database analyze` via
+  `--model-packs`/`--search-path`, so that `actions/unpinned-tag` no longer flags refs that are
+  already immutable.
+
+  NOTE: this is a standalone prototype, not yet wired into the main `init`/`analyze` steps of
+  this Action. It assumes an `actions`-language CodeQL database has already been created (e.g.
+  via `codeql database create --language=actions`).
+inputs:
+  codeql-path:
+    description: Path to the `codeql` CLI executable. Defaults to `codeql` on PATH.
+    required: false
+    default: 'codeql'
+  db-path:
+    description: Path to an already-created CodeQL database for the `actions` language.
+    required: true
+  output-path:
+    description: Path to write the generated data extension YAML file to.
+    required: false
+    default: '${{ github.workspace }}/immutable-action-refs.model.yml'
+  github-token:
+    description: Token used by `gh api` to look up release immutability.
+    required: true
+outputs:
+  model-pack-path:
+    description: Path to the generated data extension YAML file.
+    value: ${{ steps.prepare.outputs.model-pack-path }}
+runs:
+  using: 'composite'
+  steps:
+    - id: prepare
+      shell: bash
+      env:
+        CODEQL_PATH: ${{ inputs.codeql-path }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        "${{ github.action_path }}/prepare.sh" "${{ inputs.db-path }}" "${{ inputs.output-path }}"
+        echo "model-pack-path=${{ inputs.output-path }}" >> "$GITHUB_OUTPUT"

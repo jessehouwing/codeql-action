@@ -1,0 +1,6 @@
+name: codeql-action-immutable-action-refs
+version: 0.0.0
+library: false
+extractor: actions
+dependencies:
+  codeql/actions-all: "*"
